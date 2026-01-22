@@ -4159,7 +4159,7 @@
 
         hostEl.innerHTML = "";
         const abort = new AbortController();
-        const state = { page: 1, timer: null, typeTimer: null, activeType: String(options.activeType || "segment") };
+        const state = { page: 1, timer: null, typeTimer: null, loadAbort: null, activeType: String(options.activeType || "segment") };
 
         const frame = document.createElement("div");
         frame.className = "sfDocAnalyzerFrame";
@@ -4565,6 +4565,12 @@
             clearTimeout(state.timer);
             state.timer = null;
           }
+          if (state.loadAbort) {
+            try {
+              state.loadAbort.abort();
+            } catch (_) {}
+            state.loadAbort = null;
+          }
 
           updateThumbActive();
           if (pageNumEl) pageNumEl.textContent = String(state.page);
@@ -4576,25 +4582,65 @@
           clearOverlay();
           updateTableScrollHint();
 
-          frame.classList.add("sfIsScanning");
-          setStatus(`Сканирование страницы ${state.page}…`);
+          frame.classList.remove("sfIsScanning");
 
           const pageInfo = getPageInfo(state.page);
-          if (pageImg && pageInfo) pageImg.src = assetUrl(String(pageInfo.plain || pageInfo.marked || ""));
+          const nextSrc = pageInfo ? assetUrl(String(pageInfo.plain || pageInfo.marked || "")) : "";
 
-          if (!animate) {
-            frame.classList.remove("sfIsScanning");
-            if (pageImg && pageInfo) pageImg.src = assetUrl(String(pageInfo.plain || pageInfo.marked || ""));
-            renderResults();
+          const runScan = () => {
+            if (!animate) {
+              renderResults();
+              return;
+            }
+
+            frame.classList.add("sfIsScanning");
+            setStatus(`Сканирование страницы ${state.page}…`);
+
+            state.timer = setTimeout(() => {
+              state.timer = null;
+              frame.classList.remove("sfIsScanning");
+              renderResults();
+            }, 650);
+          };
+
+          if (!pageImg || !nextSrc) {
+            runScan();
             return;
           }
 
-          state.timer = setTimeout(() => {
-            state.timer = null;
-            frame.classList.remove("sfIsScanning");
-            if (pageImg && pageInfo) pageImg.src = assetUrl(String(pageInfo.plain || pageInfo.marked || ""));
-            renderResults();
-          }, 650);
+          setStatus(`Загрузка страницы ${state.page}…`);
+          const loadAbort = new AbortController();
+          state.loadAbort = loadAbort;
+          let settled = false;
+
+          const settle = (ok) =>
+            requestAnimationFrame(() => {
+              if (settled) return;
+              settled = true;
+              if (state.loadAbort !== loadAbort) return;
+              state.loadAbort = null;
+              try {
+                loadAbort.abort();
+              } catch (_) {}
+              if (!ok) {
+                setStatus(`Не удалось загрузить страницу ${state.page}.`);
+                renderResults();
+                return;
+              }
+              runScan();
+            });
+
+          try {
+            pageImg.addEventListener("load", () => settle(true), { once: true, signal: loadAbort.signal });
+            pageImg.addEventListener("error", () => settle(false), { once: true, signal: loadAbort.signal });
+          } catch (_) {
+            // Older browsers may not support AbortSignal in addEventListener options.
+            pageImg.addEventListener("load", () => settle(true), { once: true });
+            pageImg.addEventListener("error", () => settle(false), { once: true });
+          }
+
+          pageImg.src = nextSrc;
+          if (pageImg.complete && pageImg.naturalWidth > 0) settle(true);
         };
 
         const buildThumbs = () => {
@@ -4646,16 +4692,6 @@
               }),
             { signal: abort.signal }
           );
-        if (pageImg)
-          pageImg.addEventListener(
-            "load",
-            () =>
-              requestAnimationFrame(() => {
-                if (!frame.classList.contains("sfIsScanning")) renderResults();
-              }),
-            { signal: abort.signal }
-          );
-
         updateThumbActive();
         startScan(1, { animate: true });
 
@@ -4663,6 +4699,12 @@
           abort.abort();
           if (state.timer) clearTimeout(state.timer);
           if (state.typeTimer) clearTimeout(state.typeTimer);
+          if (state.loadAbort) {
+            try {
+              state.loadAbort.abort();
+            } catch (_) {}
+            state.loadAbort = null;
+          }
         };
         cleanup.setActiveType = setActiveType;
         cleanup.getActiveType = () => String(state.activeType || "");
