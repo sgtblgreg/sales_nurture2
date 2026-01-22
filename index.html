@@ -17,10 +17,13 @@
           }
 
           const host = String(window.location.hostname || "");
+          const protocol = String(window.location.protocol || "");
           const parts = pathname.split("/").filter(Boolean);
 
           let basePath = "/";
-          if (host.endsWith("github.io") && parts.length > 0) {
+          if (protocol === "file:") {
+            basePath = pathname.replace(/[^/]*$/, "") || "/";
+          } else if (host.endsWith("github.io") && parts.length > 0) {
             basePath = `/${parts[0]}/`;
           }
 
