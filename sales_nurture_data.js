@@ -3,6 +3,15 @@ window.SEGFLOW_SALES_NURTURE_DATA = {
   title: "SegFlow — Sales Nurture (после первой встречи)",
   description:
     "Лёгкая nurture‑последовательность для лидов, которые не купили после 1‑й встречи: 5 касаний за ~2 месяца. Каждый этап = артефакт (короткий отчёт) + готовое сообщение для отправки.",
+  asset_manifest: {
+    thumbs: [
+      "Example%20researches/_thumbs/bb_shrinking_to_grow.pdf.png",
+      "Example%20researches/_thumbs/bcg-activewear-trends-report.pdf.png",
+      "Example%20researches/_thumbs/sporting-goods-2025-the-new-balancing-act-turning-uncertainty-into-opportunity-v3.pdf.png",
+      "Example%20researches/_thumbs/the-2-trillion-dollar-global-wellness-market-gets-a-millennial-and-gen-z-glow-up_final.pdf.png",
+      "Example%20researches/_thumbs/time-to-move-sporting-goods-full-report-2024.pdf.png",
+    ],
+  },
   lead_placeholders: {
     company: "",
     product: "",
