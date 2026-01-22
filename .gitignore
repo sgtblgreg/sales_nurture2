@@ -1,0 +1,12 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local scratch (not for Pages deploy)
+tmp/
+temp/
+

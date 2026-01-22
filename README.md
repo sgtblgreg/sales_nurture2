@@ -39,6 +39,9 @@ python3 -m http.server 8000
 
 Потом открой `http://localhost:8000/`.
 
+## Разработка / релиз
+См. `WORKFLOW.md` — как делать изменения через ветки, тестировать локально и пушить релиз в `main`.
+
 ## GitHub Pages (project pages)
 - GitHub Pages по умолчанию прогоняет сайт через Jekyll, и директории/файлы, начинающиеся с `_`, не публикуются. Для превью в `Example researches/_thumbs/` добавлен `.nojekyll` (иначе будет 404 на `*.pdf.png`).
 - В `index.html` используется `basePath` (вычисляется из `location.pathname`) + `assetUrl(...)` для формирования ссылок под `https://<user>.github.io/<repo>/` без зависимости от `<base>`.
