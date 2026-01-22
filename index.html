@@ -4,30 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SegFlow — Sales Nurture</title>
-    <base id="sfBase" href="./" />
     <script>
       (() => {
-        const baseEl = document.getElementById("sfBase");
-        if (!baseEl) return;
-
         try {
-          const path = String(window.location.pathname || "/");
-          const parts = path.split("/").filter(Boolean);
-          const host = String(window.location.hostname || "");
+          const pathname = String(window.location.pathname || "/");
+          const hasExt = /\/[^/]+\.[^/]+$/.test(pathname);
 
-          let baseHref = "/";
-          if (host.endsWith("github.io") && parts.length > 0) {
-            baseHref = `/${parts[0]}/`;
-          } else {
-            baseHref = path.endsWith("/") ? path : path.replace(/[^/]*$/, "");
-            if (!baseHref.endsWith("/")) baseHref += "/";
+          if (!pathname.endsWith("/") && !hasExt) {
+            const next = `${pathname}/${String(window.location.search || "")}${String(window.location.hash || "")}`;
+            window.location.replace(next);
+            return;
           }
 
-          baseEl.setAttribute("href", baseHref);
+          const host = String(window.location.hostname || "");
+          const parts = pathname.split("/").filter(Boolean);
+
+          let basePath = "/";
+          if (host.endsWith("github.io") && parts.length > 0) {
+            basePath = `/${parts[0]}/`;
+          }
+
+          window.SF_BASE_PATH = basePath;
+
+          const icon = document.createElement("link");
+          icon.rel = "icon";
+          icon.type = "image/jpeg";
+          icon.href = `${basePath}logo_sgtbl.jpg`;
+          document.head.appendChild(icon);
         } catch (_) {}
       })();
     </script>
-    <link rel="icon" type="image/jpeg" href="logo_sgtbl.jpg" />
     <style>
       :root {
         color-scheme: light;
@@ -3921,6 +3927,64 @@
         return window.SEGFLOW_SALES_NURTURE_BUNDLE || {};
       }
 
+      function normalizeBasePath(path) {
+        let p = String(path || "/");
+        if (!p.startsWith("/")) p = `/${p}`;
+        if (!p.endsWith("/")) p = `${p}/`;
+        return p;
+      }
+
+      function computeBasePath() {
+        try {
+          const pathname = String(window.location.pathname || "/");
+          const host = String(window.location.hostname || "");
+          const parts = pathname.split("/").filter(Boolean);
+          if (host.endsWith("github.io") && parts.length > 0) {
+            return normalizeBasePath(`/${parts[0]}/`);
+          }
+          return "/";
+        } catch (_) {
+          return "/";
+        }
+      }
+
+      function getBasePath() {
+        const v = String(window.SF_BASE_PATH || "");
+        return v ? normalizeBasePath(v) : computeBasePath();
+      }
+
+      function isProbablyAbsoluteUrl(url) {
+        const u = String(url || "");
+        return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(u) || u.startsWith("//");
+      }
+
+      function stripBasePath(url) {
+        const u = String(url || "");
+        if (!u) return "";
+        if (u.startsWith("#")) return u;
+        if (isProbablyAbsoluteUrl(u) || u.startsWith("data:") || u.startsWith("blob:") || u.startsWith("mailto:") || u.startsWith("tel:")) return u;
+
+        const base = getBasePath();
+        let p = u.replace(/^\.\/+/, "");
+        if (p.startsWith("/")) {
+          if (base !== "/" && p.startsWith(base)) {
+            p = p.slice(base.length);
+          } else {
+            p = p.replace(/^\/+/, "");
+          }
+        }
+        return p;
+      }
+
+      function assetUrl(url) {
+        const u = String(url || "");
+        if (!u) return "";
+        if (u.startsWith("#")) return u;
+        if (isProbablyAbsoluteUrl(u) || u.startsWith("data:") || u.startsWith("blob:") || u.startsWith("mailto:") || u.startsWith("tel:")) return u;
+        const p = stripBasePath(u).replace(/^\/+/, "");
+        return `${getBasePath()}${p}`;
+      }
+
       const THUMB_MANIFEST = (() => {
         try {
           const data = safeGetData();
@@ -3965,24 +4029,46 @@
         return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
       }
 
-      function applyPdfThumbFallback(html) {
+      function rewriteHtmlAssets(html) {
         if (!html) return html;
-        if (!THUMB_MANIFEST || !THUMB_MANIFEST.size) return html;
         const text = String(html);
-        if (!text.includes("_thumbs/") || !text.includes(".pdf.png")) return html;
+        if (!text.includes("src=") && !text.includes("href=")) return html;
 
         try {
           const doc = new DOMParser().parseFromString(`<div>${text}</div>`, "text/html");
           const container = doc.body && doc.body.firstChild;
           if (!container) return html;
 
-          container.querySelectorAll("img.sfSourceThumb").forEach((img) => {
-            const src = String(img.getAttribute("src") || "");
+          if (THUMB_MANIFEST && THUMB_MANIFEST.size) {
+            container.querySelectorAll("img.sfSourceThumb").forEach((img) => {
+              const src = String(img.getAttribute("src") || "");
+              if (!src) return;
+              if (!src.includes("_thumbs/") || !src.endsWith(".pdf.png")) return;
+              const key = stripBasePath(src);
+              if (!THUMB_MANIFEST.has(key)) {
+                img.setAttribute("src", svgThumbPlaceholderDataUrl(img.getAttribute("alt") || "PDF"));
+                img.setAttribute("data-sf-thumb-fallback", "1");
+                return;
+              }
+              img.setAttribute("src", assetUrl(key));
+            });
+          }
+
+          container.querySelectorAll("[src]").forEach((el) => {
+            if (el.matches("img.sfSourceThumb")) return;
+            const src = String(el.getAttribute("src") || "");
             if (!src) return;
-            if (!src.includes("_thumbs/") || !src.endsWith(".pdf.png")) return;
-            if (THUMB_MANIFEST.has(src)) return;
-            img.setAttribute("src", svgThumbPlaceholderDataUrl(img.getAttribute("alt") || "PDF"));
-            img.setAttribute("data-sf-thumb-fallback", "1");
+            if (src.startsWith("data:") || src.startsWith("blob:")) return;
+            if (isProbablyAbsoluteUrl(src)) return;
+            el.setAttribute("src", assetUrl(src));
+          });
+
+          container.querySelectorAll("[href]").forEach((el) => {
+            const href = String(el.getAttribute("href") || "");
+            if (!href || href === "#") return;
+            if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
+            if (isProbablyAbsoluteUrl(href)) return;
+            el.setAttribute("href", assetUrl(href));
           });
 
           return container.innerHTML;
@@ -3998,9 +4084,9 @@
         // Many “consulting-style” reports are authored as HTML snippets (for precise layout).
         // Markdown parsing can accidentally turn indented HTML lines into code blocks.
         // If it looks like an HTML document fragment, render it as-is.
-        if (trimmed.startsWith("<")) return applyPdfThumbFallback(trimmed);
+        if (trimmed.startsWith("<")) return rewriteHtmlAssets(trimmed);
         const mk = window.marked;
-        if (mk && typeof mk.parse === "function") return applyPdfThumbFallback(mk.parse(text));
+        if (mk && typeof mk.parse === "function") return rewriteHtmlAssets(mk.parse(text));
         return `<pre>${escapeHtml(text)}</pre>`;
       }
 
@@ -4092,8 +4178,8 @@
               </div>
               <div class="sfAnalyzerThumbStrip" data-role="thumbs" aria-label="Страницы документа"></div>
               <div class="sfSourceActions">
-                <a class="sfInlineLink" data-role="pdf-open" href="${escapeHtml(pdfUrl)}#page=1" target="_blank" rel="noopener noreferrer">Открыть PDF</a>
-                <a class="sfInlineLink" href="${escapeHtml(pdfUrl)}" download>Скачать PDF</a>
+                <a class="sfInlineLink" data-role="pdf-open" href="${escapeHtml(assetUrl(pdfUrl))}#page=1" target="_blank" rel="noopener noreferrer">Открыть PDF</a>
+                <a class="sfInlineLink" href="${escapeHtml(assetUrl(pdfUrl))}" download>Скачать PDF</a>
               </div>
               <div class="sfTagRow" data-role="meta"></div>
             </div>
@@ -4452,7 +4538,7 @@
             visible.forEach(addRow);
           }
 
-          if (pdfOpenEl) pdfOpenEl.href = `${pdfUrl}#page=${state.page}`;
+          if (pdfOpenEl) pdfOpenEl.href = `${assetUrl(pdfUrl)}#page=${state.page}`;
           if (pageNumEl) pageNumEl.textContent = String(state.page);
           setStatus(`Скан страницы ${state.page}: ${typeLabel(activeType)} — ${visible.length}`);
 
@@ -4482,7 +4568,7 @@
 
           updateThumbActive();
           if (pageNumEl) pageNumEl.textContent = String(state.page);
-          if (pdfOpenEl) pdfOpenEl.href = `${pdfUrl}#page=${state.page}`;
+          if (pdfOpenEl) pdfOpenEl.href = `${assetUrl(pdfUrl)}#page=${state.page}`;
 
           clearEl(itemsEl);
           clearEl(tbodyEl);
@@ -4494,11 +4580,11 @@
           setStatus(`Сканирование страницы ${state.page}…`);
 
           const pageInfo = getPageInfo(state.page);
-          if (pageImg && pageInfo) pageImg.src = String(pageInfo.plain || pageInfo.marked || "");
+          if (pageImg && pageInfo) pageImg.src = assetUrl(String(pageInfo.plain || pageInfo.marked || ""));
 
           if (!animate) {
             frame.classList.remove("sfIsScanning");
-            if (pageImg && pageInfo) pageImg.src = String(pageInfo.plain || pageInfo.marked || "");
+            if (pageImg && pageInfo) pageImg.src = assetUrl(String(pageInfo.plain || pageInfo.marked || ""));
             renderResults();
             return;
           }
@@ -4506,7 +4592,7 @@
           state.timer = setTimeout(() => {
             state.timer = null;
             frame.classList.remove("sfIsScanning");
-            if (pageImg && pageInfo) pageImg.src = String(pageInfo.plain || pageInfo.marked || "");
+            if (pageImg && pageInfo) pageImg.src = assetUrl(String(pageInfo.plain || pageInfo.marked || ""));
             renderResults();
           }, 650);
         };
@@ -4522,7 +4608,7 @@
             btn.setAttribute("data-sf-docpage", String(n));
             btn.setAttribute("aria-label", `Страница ${n}`);
             btn.innerHTML = `
-              <img class="sfAnalyzerThumbImg" src="${escapeHtml(String(p.plain || p.marked || ""))}" alt="Page ${n} preview" />
+              <img class="sfAnalyzerThumbImg" src="${escapeHtml(assetUrl(String(p.plain || p.marked || "")))}" alt="Page ${n} preview" />
               <span class="sfAnalyzerThumbNum">${n}</span>
             `;
             thumbsEl.appendChild(btn);
@@ -8341,7 +8427,7 @@
               .map((d) => {
                 const doc = analyzers && analyzers[d.key];
                 const page = doc ? findFirstHitPageForAny(doc, (group.variants || []).map((v) => v.key)) : 1;
-                const url = d.pdfUrl ? `${String(d.pdfUrl)}#page=${page}` : "";
+                const url = d.pdfUrl ? `${assetUrl(String(d.pdfUrl))}#page=${page}` : "";
                 const link = url
                   ? `<a class="sfInlineLink" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">PDF • стр. ${page}</a>`
                   : "—";
@@ -8464,7 +8550,7 @@
               .map((d) => {
                 const doc = analyzers && analyzers[d.key];
                 const page = doc ? findFirstHitPageForAny(doc, (group.variants || []).map((v) => v.key)) : 1;
-                const url = d.pdfUrl ? `${String(d.pdfUrl)}#page=${page}` : "";
+                const url = d.pdfUrl ? `${assetUrl(String(d.pdfUrl))}#page=${page}` : "";
                 const link = url
                   ? `<a class="sfInlineLink" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">PDF • стр. ${page}</a>`
                   : "—";
@@ -8649,7 +8735,7 @@
                 .map((d) => {
                   const doc = analyzers && analyzers[d.key];
                   const page = doc ? findFirstHitPage(doc, segId) : 1;
-                  const url = d.pdfUrl ? `${String(d.pdfUrl)}#page=${page}` : "";
+                  const url = d.pdfUrl ? `${assetUrl(String(d.pdfUrl))}#page=${page}` : "";
                   const link = url
                     ? `<a class="sfInlineLink" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">PDF • стр. ${page}</a>`
                     : "—";
@@ -8683,7 +8769,7 @@
               const n = Number(m[1]);
               return Number.isFinite(n) ? n : null;
             })();
-            const shotUrl = segNum ? `Example%20researches/segment_shots/seg_${String(segNum).padStart(2, "0")}.png` : "";
+            const shotUrl = segNum ? assetUrl(`Example%20researches/segment_shots/seg_${String(segNum).padStart(2, "0")}.png`) : "";
 
             const md = [
               `<h3>${escapeHtml(segName || "Сегмент")}</h3>`,
@@ -8722,7 +8808,7 @@
               .concat(segment ? [`<span class="sfTag">segment: ${escapeHtml(segment)}</span>`] : []);
             const functionsHtml = functionsList.length ? `<ul>${functionsList.map((f) => `<li>${escapeHtml(f)}</li>`).join("")}</ul>` : "";
 
-            const imgHtml = img ? `<img class="sfEvidenceImg" src="${escapeHtml(img)}" alt="${escapeHtml(imgAlt || modalTitle)}" />` : "";
+            const imgHtml = img ? `<img class="sfEvidenceImg" src="${escapeHtml(assetUrl(img))}" alt="${escapeHtml(imgAlt || modalTitle)}" />` : "";
             const mockHtml =
               kicker || headline || body || cta
                 ? [
@@ -8879,7 +8965,7 @@
             React.createElement(
               "div",
               { style: { display: "flex", gap: 12, alignItems: "center" } },
-              React.createElement("img", { src: "logo_sgtbl.jpg", alt: "Segmentable", style: { width: 34, height: 34, borderRadius: 8 } }),
+              React.createElement("img", { src: assetUrl("logo_sgtbl.jpg"), alt: "Segmentable", style: { width: 34, height: 34, borderRadius: 8 } }),
               React.createElement(
                 "div",
                 null,
@@ -9082,7 +9168,7 @@
               React.createElement(
                 "div",
                 { className: "brand" },
-                React.createElement("img", { className: "brandLogo", src: "logo_sgtbl.jpg", alt: "Segmentable", draggable: "false" }),
+                React.createElement("img", { className: "brandLogo", src: assetUrl("logo_sgtbl.jpg"), alt: "Segmentable", draggable: "false" }),
                 React.createElement(
                   "div",
                   null,

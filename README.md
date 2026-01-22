@@ -40,8 +40,14 @@ python3 -m http.server 8000
 Потом открой `http://localhost:8000/`.
 
 ## GitHub Pages (project pages)
-- В `index.html` добавлен динамический `<base>` для корректных путей под `https://<user>.github.io/<repo>/`.
-- Превью PDF‑обложек (файлы `*.pdf.png` в `Example researches/_thumbs`) отображаются только если путь есть в `asset_manifest.thumbs` в `sales_nurture_data.js`; иначе подставляется placeholder без 404.
+- GitHub Pages по умолчанию прогоняет сайт через Jekyll, и директории/файлы, начинающиеся с `_`, не публикуются. Для превью в `Example researches/_thumbs/` добавлен `.nojekyll` (иначе будет 404 на `*.pdf.png`).
+- В `index.html` используется `basePath` (вычисляется из `location.pathname`) + `assetUrl(...)` для формирования ссылок под `https://<user>.github.io/<repo>/` без зависимости от `<base>`.
+- Превью PDF‑обложек показываются только для путей из `asset_manifest.thumbs` в `sales_nurture_data.js`; иначе подставляется placeholder без сетевых 404.
+
+## Диагностика 404 (до фикса)
+Примеры URL, которые отдавали 404 на GitHub Pages до добавления `.nojekyll`:
+- `/Example%20researches/_thumbs/bb_shrinking_to_grow.pdf.png`
+- `/Example%20researches/_thumbs/bcg-activewear-trends-report.pdf.png`
 
 ## Demo PDFs (примеры)
 По умолчанию включён DEMO‑режим (demo‑шаблоны). Можно выключить через **Контекст → Очистить**.
